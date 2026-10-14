@@ -13,37 +13,41 @@ type Game = {
   home_team: string;
 };
 
+type StatKey =
+  | "passing_yards"
+  | "passing_tds"
+  | "carries"
+  | "rushing_yards"
+  | "rushing_tds"
+  | "receptions"
+  | "targets"
+  | "receiving_yards"
+  | "receiving_tds"
+  | "completions"
+  | "attempts";
+
 type RecentGame = {
   season: number;
   week: number;
   gameday: string | null;
   opponent_team: string | null;
-  fantasy_points_ppr: number | null;
-  passing_yards: number | null;
-  passing_tds: number | null;
-  carries: number | null;
-  rushing_yards: number | null;
-  rushing_tds: number | null;
-  receptions: number | null;
-  targets: number | null;
-  receiving_yards: number | null;
-  receiving_tds: number | null;
-  completions: number | null;
-  attempts: number | null;
-};
-
-type StatKey = keyof Omit<
-  RecentGame,
-  "season" | "week" | "gameday" | "opponent_team"
->;
+} & Record<StatKey, number | null>;
 
 type Player = {
   player_id: string;
   player_display_name: string;
   position: string;
   team: string;
+  opponent_team: string;
   sample_size: number;
   projection: Record<StatKey, number | null>;
+  recent_averages: Record<StatKey, number | null>;
+  stat_reasons: Partial<
+    Record<
+      StatKey,
+      { recent_average: number; projection: number; reason: string }
+    >
+  >;
   recent_games: RecentGame[];
 };
 
@@ -51,8 +55,7 @@ type PlayerOutlook = { game: Game; player: Player };
 
 const backendUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
-const statLabels: Record<keyof Player["projection"], string> = {
-  fantasy_points_ppr: "PPR points",
+const statLabels: Record<StatKey, string> = {
   passing_yards: "Passing yards",
   passing_tds: "Passing touchdowns",
   carries: "Carries",
@@ -66,12 +69,8 @@ const statLabels: Record<keyof Player["projection"], string> = {
   attempts: "Pass attempts",
 };
 
-const projectionStatsByPosition: Record<
-  string,
-  Array<keyof Player["projection"]>
-> = {
+const statsByPosition: Record<string, StatKey[]> = {
   QB: [
-    "fantasy_points_ppr",
     "passing_yards",
     "passing_tds",
     "completions",
@@ -80,73 +79,34 @@ const projectionStatsByPosition: Record<
     "rushing_tds",
   ],
   RB: [
-    "fantasy_points_ppr",
+    "rushing_yards",
     "carries",
-    "rushing_yards",
     "rushing_tds",
-    "targets",
-    "receptions",
     "receiving_yards",
+    "receptions",
+    "targets",
     "receiving_tds",
   ],
   WR: [
-    "fantasy_points_ppr",
-    "targets",
-    "receptions",
     "receiving_yards",
+    "receptions",
+    "targets",
     "receiving_tds",
     "rushing_yards",
   ],
   TE: [
-    "fantasy_points_ppr",
-    "targets",
-    "receptions",
     "receiving_yards",
+    "receptions",
+    "targets",
     "receiving_tds",
     "rushing_yards",
-  ],
-};
-
-const recentStatsByPosition: Record<
-  string,
-  Array<{ key: StatKey; label: string }>
-> = {
-  QB: [
-    { key: "completions", label: "Completions" },
-    { key: "attempts", label: "Attempts" },
-    { key: "passing_yards", label: "Pass Yds" },
-    { key: "passing_tds", label: "Pass TD" },
-    { key: "rushing_yards", label: "Rush Yds" },
-    { key: "fantasy_points_ppr", label: "PPR" },
-  ],
-  RB: [
-    { key: "carries", label: "Carries" },
-    { key: "rushing_yards", label: "Rush Yds" },
-    { key: "rushing_tds", label: "Rush TD" },
-    { key: "receptions", label: "Receptions" },
-    { key: "receiving_yards", label: "Rec Yds" },
-    { key: "fantasy_points_ppr", label: "PPR" },
-  ],
-  WR: [
-    { key: "targets", label: "Targets" },
-    { key: "receptions", label: "Receptions" },
-    { key: "receiving_yards", label: "Rec Yds" },
-    { key: "receiving_tds", label: "Rec TD" },
-    { key: "rushing_yards", label: "Rush Yds" },
-    { key: "fantasy_points_ppr", label: "PPR" },
-  ],
-  TE: [
-    { key: "targets", label: "Targets" },
-    { key: "receptions", label: "Receptions" },
-    { key: "receiving_yards", label: "Rec Yds" },
-    { key: "receiving_tds", label: "Rec TD" },
-    { key: "rushing_yards", label: "Rush Yds" },
-    { key: "fantasy_points_ppr", label: "PPR" },
   ],
 };
 
 function formatStat(value: number | null): string {
-  return value === null ? "—" : Number(value).toFixed(1).replace(/\.0$/, "");
+  return value === null
+    ? "—"
+    : Number(value).toFixed(1).replace(/\.0$/, "");
 }
 
 function formatDate(value: string | null): string {
@@ -211,7 +171,10 @@ function PlayerOutlookContent() {
         <p className="text-rose-300">
           Could not load this player: {error ?? "Player details are unavailable."}
         </p>
-        <Link className="mt-4 inline-block text-cyan-300" href={`/games/${gameId}`}>
+        <Link
+          className="mt-4 inline-block text-cyan-300"
+          href={`/games/${encodeURIComponent(gameId)}`}
+        >
           Back to game
         </Link>
       </main>
@@ -220,10 +183,7 @@ function PlayerOutlookContent() {
 
   const { game, player } = data;
   const projectionStats =
-    projectionStatsByPosition[player.position] ?? ["fantasy_points_ppr"];
-  const recentStats = recentStatsByPosition[player.position] ?? [
-    { key: "fantasy_points_ppr" as const, label: "PPR" },
-  ];
+    statsByPosition[player.position] ?? ["receiving_yards"];
 
   return (
     <main className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100 sm:px-8">
@@ -245,67 +205,90 @@ function PlayerOutlookContent() {
 
         <section className="py-6">
           <h2 className="text-xl font-semibold text-white">
-            Baseline projection vs. {game.away_team} @ {game.home_team}
+            Projected stats vs. {player.opponent_team}
           </h2>
           <p className="mt-1 text-sm text-slate-400">
-            Simple averages from the last {player.sample_size} available game
-            {player.sample_size === 1 ? "" : "s"}.
+            Select a stat to see its recent game log and matchup explanation.
           </p>
-          <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {projectionStats
               .filter((stat) => player.projection[stat] !== null)
-              .map((stat) => (
-                <div
-                  key={stat}
-                  className="rounded-lg border border-slate-800 bg-slate-900 p-4"
-                >
-                  <dt className="text-sm text-slate-400">{statLabels[stat]}</dt>
-                  <dd className="mt-1 text-2xl font-semibold text-white">
-                    {formatStat(player.projection[stat])}
-                  </dd>
-                </div>
-              ))}
-          </dl>
-          <aside className="mt-4 rounded-lg border border-amber-900/70 bg-amber-950/30 p-4 text-sm text-amber-100">
-            This is a recent-form baseline, not a trained or backtested model.
-            It does not account for matchup adjustments, current injuries, or
-            confirmed playing time.
-          </aside>
-        </section>
+              .map((stat) => {
+                const reason = player.stat_reasons[stat];
+                const average =
+                  reason?.recent_average ?? player.recent_averages[stat];
+                const projected = player.projection[stat];
+                const trend =
+                  average === null || projected === null
+                    ? "No recent average available"
+                    : projected > average + 0.05
+                      ? `Above recent average (${formatStat(average)})`
+                      : projected < average - 0.05
+                        ? `Below recent average (${formatStat(average)})`
+                        : `Near recent average (${formatStat(average)})`;
 
-        <section className="py-4">
-          <h2 className="mb-3 text-xl font-semibold text-white">
-            Recent game stats
-          </h2>
-          <div className="overflow-x-auto rounded-lg border border-slate-800">
-            <table className="w-full min-w-[760px] text-left text-sm">
-              <thead className="bg-slate-900 text-slate-400">
-                <tr>
-                  <th className="p-3">Week</th>
-                  <th className="p-3">Opponent</th>
-                  {recentStats.map(({ key, label }) => (
-                    <th key={key} className="p-3">{label}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {player.recent_games.map((recentGame) => (
-                  <tr key={`${recentGame.season}-${recentGame.week}`}>
-                    <td className="p-3">
-                      {recentGame.season} W{recentGame.week} ·{" "}
-                      {formatDate(recentGame.gameday)}
-                    </td>
-                    <td className="p-3">{recentGame.opponent_team ?? "—"}</td>
-                    {recentStats.map(({ key }) => (
-                      <td key={key} className="p-3">
-                        {formatStat(recentGame[key])}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                return (
+                  <details
+                    key={stat}
+                    className="group rounded-lg border border-slate-800 bg-slate-900"
+                  >
+                    <summary className="cursor-pointer list-none p-4">
+                      <span className="flex items-center justify-between gap-3">
+                        <span>
+                          <span className="block text-sm text-slate-400">
+                            {statLabels[stat]}
+                          </span>
+                          <span className="mt-1 block text-2xl font-semibold text-white">
+                            {formatStat(projected)}
+                          </span>
+                          <span className="mt-1 block text-xs text-slate-400">
+                            {trend}
+                          </span>
+                        </span>
+                        <span
+                          aria-hidden="true"
+                          className="text-sm text-cyan-300 group-open:rotate-180"
+                        >
+                          ▼
+                        </span>
+                      </span>
+                    </summary>
+                    <div className="border-t border-slate-800 px-4 py-3">
+                      <p className="text-sm leading-6 text-slate-300">
+                        {reason?.reason ??
+                          "This estimate uses the player's recent average; no matchup adjustment is available."}
+                      </p>
+                      <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        Previous games · {statLabels[stat]}
+                      </h3>
+                      <ul className="mt-2 divide-y divide-slate-800">
+                        {player.recent_games.map((recentGame) => (
+                          <li
+                            key={`${recentGame.season}-${recentGame.week}`}
+                            className="flex items-center justify-between gap-3 py-2 text-sm"
+                          >
+                            <span className="text-slate-300">
+                              {recentGame.season} Week {recentGame.week} ·{" "}
+                              {formatDate(recentGame.gameday)} · vs.{" "}
+                              {recentGame.opponent_team ?? "—"}
+                            </span>
+                            <span className="font-medium text-white">
+                              {formatStat(recentGame[stat])}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </details>
+                );
+              })}
           </div>
+          <aside className="mt-4 rounded-lg border border-amber-900/70 bg-amber-950/30 p-4 text-sm text-amber-100">
+            These are simple recent-form baselines with a small adjustment from
+            recent team defensive results. They are not trained or backtested.
+            The data does not identify individual cornerback matchups or current
+            injury/lineup changes.
+          </aside>
         </section>
       </div>
     </main>
@@ -314,7 +297,9 @@ function PlayerOutlookContent() {
 
 export default function PlayerOutlookPage() {
   return (
-    <Suspense fallback={<main className="p-6 text-slate-300">Loading player...</main>}>
+    <Suspense
+      fallback={<main className="p-6 text-slate-300">Loading player...</main>}
+    >
       <PlayerOutlookContent />
     </Suspense>
   );

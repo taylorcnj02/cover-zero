@@ -22,7 +22,6 @@ type RecentGame = {
   week: number;
   gameday: string | null;
   opponent_team: string | null;
-  fantasy_points_ppr: number | null;
   passing_yards: number | null;
   passing_tds: number | null;
   carries: number | null;
@@ -41,10 +40,18 @@ type Player = {
   player_display_name: string;
   position: string;
   team: string;
+  opponent_team: string;
   sample_size: number;
-  projection: Record<keyof Omit<RecentGame, "season" | "week" | "gameday" | "opponent_team">, number | null>;
+  projection: Record<StatKey, number | null>;
+  recent_averages: Record<StatKey, number | null>;
+  primary_yards: number;
   recent_games: RecentGame[];
 };
+
+type StatKey = keyof Omit<
+  RecentGame,
+  "season" | "week" | "gameday" | "opponent_team"
+>;
 
 type Outlook = { game: Game; players: Player[] };
 
@@ -64,14 +71,13 @@ const statLabels: Partial<Record<keyof Player["projection"], string>> = {
 
 function projectionSummary(player: Player): string {
   const statsByPosition: Record<string, Array<keyof Player["projection"]>> = {
-    QB: ["passing_yards", "passing_tds", "rushing_yards"],
+    QB: ["passing_yards", "passing_tds"],
     RB: ["rushing_yards", "carries", "receiving_yards", "receptions"],
-    WR: ["receiving_yards", "receptions", "targets"],
-    TE: ["receiving_yards", "receptions", "targets"],
+    WR: ["receiving_yards", "receptions"],
+    TE: ["receiving_yards", "receptions"],
   };
   const stats = statsByPosition[player.position] ?? [];
   return [
-    `${formatStat(player.projection.fantasy_points_ppr)} PPR pts`,
     ...stats
       .filter((stat) => player.projection[stat] !== null)
       .map(
@@ -164,13 +170,29 @@ function GameOutlookContent() {
   }
 
   const { game } = outlook;
+  const presumedStarterByTeam = new Map<string, Player>();
+  for (const player of outlook.players) {
+    if (player.position !== "QB") continue;
+    const attempts = player.recent_averages.attempts ?? 0;
+    const currentStarter = presumedStarterByTeam.get(player.team);
+    if (
+      attempts > 0 &&
+      (!currentStarter ||
+        attempts > (currentStarter.recent_averages.attempts ?? 0))
+    ) {
+      presumedStarterByTeam.set(player.team, player);
+    }
+  }
+
   const rankedPlayers = [...outlook.players]
-    .filter((player) => (player.projection.fantasy_points_ppr ?? 0) > 0)
-    .sort(
-      (a, b) =>
-        (b.projection.fantasy_points_ppr ?? 0) -
-        (a.projection.fantasy_points_ppr ?? 0),
+    .filter(
+      (player) =>
+        player.primary_yards > 0 &&
+        (player.position !== "QB" ||
+          presumedStarterByTeam.get(player.team)?.player_id ===
+            player.player_id),
     )
+    .sort((a, b) => b.primary_yards - a.primary_yards)
     .slice(0, 5);
   const homePlayers = outlook.players.filter(
     (player) => player.team === game.home_team,
@@ -212,11 +234,11 @@ function GameOutlookContent() {
 
         <section className="py-6">
           <h2 className="text-xl font-semibold text-white">
-            Top 5 recent-form outlooks
+            Top 5 players to watch
           </h2>
           <p className="mt-1 text-sm text-slate-400">
-            Ranked by average PPR points across each player&apos;s last
-            available games.
+            Ranked by projected primary yardage for each player&apos;s position
+            and recent role.
           </p>
           {rankedPlayers.length === 0 ? (
             <p className="mt-4 rounded-lg border border-slate-800 p-4 text-slate-300">
@@ -236,7 +258,7 @@ function GameOutlookContent() {
                       {player.player_display_name}
                     </p>
                     <p className="mt-2 text-sm text-slate-300">
-                      Baseline: {projectionSummary(player)}
+                      {projectionSummary(player)}
                     </p>
                   </Link>
                 </li>

@@ -1,12 +1,15 @@
 """Load NFL player weekly statistics and schedules into PostgreSQL."""
 
+from datetime import date
+
 import pandas as pd
 import nflreadpy
 from polars import DataFrame
 
 from app.db import engine
 
-SEASONS = [2023, 2024, 2025]
+FIRST_SEASON = 2023
+SEASONS = list(range(FIRST_SEASON, date.today().year + 1))
 
 
 def replace_table(frame: DataFrame, table_name: str) -> int:

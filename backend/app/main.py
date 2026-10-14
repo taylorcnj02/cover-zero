@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.routes.games import router as games_router
 
-app = FastAPI(title="NFL Parlay App API")
+app = FastAPI(title="NFL Player Outlook API")
 
 app.add_middleware(
     CORSMiddleware,
