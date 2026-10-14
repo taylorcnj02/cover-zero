@@ -22,6 +22,7 @@ class PlayerGameFeatureTests(unittest.TestCase):
                     "team": "AAA",
                     "opponent_team": "BBB",
                     "receiving_yards": yards,
+                    "receiving_first_downs": week,
                     "targets": 4,
                     "receptions": 3,
                     "receiving_tds": 0,
@@ -52,6 +53,10 @@ class PlayerGameFeatureTests(unittest.TestCase):
         self.assertEqual(features.loc[1, "last_5_receiving_yards"], 10)
         self.assertEqual(features.loc[2, "last_5_receiving_yards"], 20)
         self.assertEqual(features.loc[2, "last_3_receiving_yards"], 20)
+        self.assertEqual(
+            features.loc[2, "last_5_receiving_first_downs"],
+            1.5,
+        )
         self.assertEqual(features.loc[2, "prior_games"], 2)
         self.assertEqual(
             features.loc[1, "opponent_last5_receiving_yards_allowed"],

@@ -329,12 +329,14 @@ uv run python -m scripts.backtest_receiving_yards
 ```
 
 On the currently loaded nflverse snapshot, training on 2023-2024 and testing
-only on 2025 produced a median MAE of **17.72 receiving yards**, compared with
-**18.89 yards** for the last-five-game average (a **6.19% lower MAE**). The
-10th-to-90th percentile range contained **85.35%** of test results, with an
-average width of **59.8 yards**. This is a modest improvement on this holdout,
-not proof of future accuracy; refresh data and rerun the command to reproduce
-metrics for the current database.
+only on 2025 produced a median MAE of **17.71 receiving yards**, compared with
+**18.89 yards** for the last-five-game average (a **6.25% lower MAE**). The
+10th-to-90th percentile range contained **85.76%** of test results, with an
+average width of **59.63 yards**. A feature comparison found rolling receiving
+first downs improved this holdout slightly; adding receiving air yards and
+yards after catch did not, so those two features were excluded. This is a
+modest improvement on one holdout, not proof of future accuracy; refresh data
+and rerun the command to reproduce metrics for the current database.
 
 On macOS, if XGBoost reports that `libomp.dylib` is missing, install its
 OpenMP runtime with `brew install libomp`.

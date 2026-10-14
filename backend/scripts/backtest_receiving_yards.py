@@ -4,7 +4,11 @@ import argparse
 import json
 
 from app.db import engine
-from app.features.player_game import load_player_game_features
+from app.features.player_game import (
+    BASE_FEATURE_COLUMNS,
+    FEATURE_COLUMNS,
+    load_player_game_features,
+)
 from app.models.receiving_yards import backtest_receiving_yards
 
 
@@ -22,10 +26,27 @@ def main() -> None:
 
     with engine.connect() as connection:
         features = load_player_game_features(connection)
-    result, predictions = backtest_receiving_yards(features, args.test_season)
+    core_result, _ = backtest_receiving_yards(
+        features,
+        args.test_season,
+        BASE_FEATURE_COLUMNS,
+    )
+    result, predictions = backtest_receiving_yards(
+        features,
+        args.test_season,
+        FEATURE_COLUMNS,
+    )
 
     print("WR/TE receiving-yards holdout backtest")
-    print(json.dumps(result.as_dict(), indent=2))
+    print(
+        json.dumps(
+            {
+                "core_features": core_result.as_dict(),
+                "plus_receiving_first_downs": result.as_dict(),
+            },
+            indent=2,
+        )
+    )
     print("\nSample held-out predictions (yards):")
     print(
         predictions[

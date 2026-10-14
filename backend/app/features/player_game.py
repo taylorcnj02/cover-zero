@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-ROLLING_STATS = (
+CORE_ROLLING_STATS = (
     "targets",
     "receptions",
     "receiving_yards",
@@ -11,13 +11,26 @@ ROLLING_STATS = (
     "target_share",
     "air_yards_share",
 )
-FEATURE_COLUMNS = (
+EXTRA_ROLLING_STATS = (
+    "receiving_first_downs",
+)
+ROLLING_STATS = CORE_ROLLING_STATS + EXTRA_ROLLING_STATS
+BASE_FEATURE_COLUMNS = (
     "prior_games",
     "is_home",
     "is_te",
-    *(f"last_{window}_{stat}" for window in (3, 5) for stat in ROLLING_STATS),
+    *(
+        f"last_{window}_{stat}"
+        for window in (3, 5)
+        for stat in CORE_ROLLING_STATS
+    ),
     "opponent_last5_receiving_yards_allowed",
     "opponent_last5_targets_allowed",
+)
+FEATURE_COLUMNS = BASE_FEATURE_COLUMNS + tuple(
+    f"last_{window}_{stat}"
+    for window in (3, 5)
+    for stat in EXTRA_ROLLING_STATS
 )
 
 
