@@ -1,6 +1,9 @@
 """Train and evaluate quantile XGBoost models for WR/TE receiving yards."""
 
 from dataclasses import asdict, dataclass
+import json
+from pathlib import Path
+from typing import Mapping
 
 import numpy as np
 import pandas as pd
@@ -10,6 +13,8 @@ from xgboost import XGBRegressor
 from app.features.player_game import FEATURE_COLUMNS
 
 QUANTILES = (0.1, 0.5, 0.9)
+MODEL_LABELS = ("p10", "p50", "p90")
+MODEL_DIRECTORY = Path(__file__).resolve().parents[2] / "artifacts" / "receiving_yards"
 
 
 @dataclass(frozen=True)
@@ -46,6 +51,94 @@ def _new_quantile_model(quantile: float) -> XGBRegressor:
     )
 
 
+def train_receiving_yards_models(
+    features: pd.DataFrame,
+    through_season: int,
+) -> dict[str, XGBRegressor]:
+    """Fit the three quantile models using seasons through the supplied year."""
+    training = features.loc[
+        (features["season"] <= through_season)
+        & features["receiving_yards"].notna()
+    ]
+    if training.empty:
+        raise ValueError(
+            f"No receiving-yards training rows exist through {through_season}."
+        )
+
+    x_train = training[list(FEATURE_COLUMNS)]
+    y_train = training["receiving_yards"].astype(float)
+    models = {}
+    for label, quantile in zip(MODEL_LABELS, QUANTILES, strict=True):
+        model = _new_quantile_model(quantile)
+        model.fit(x_train, y_train)
+        models[label] = model
+    return models
+
+
+def save_receiving_yards_models(
+    models: Mapping[str, XGBRegressor],
+    through_season: int,
+    directory: Path = MODEL_DIRECTORY,
+) -> None:
+    """Save XGBoost model files and the feature/version metadata beside them."""
+    directory.mkdir(parents=True, exist_ok=True)
+    for label in MODEL_LABELS:
+        models[label].save_model(directory / f"{label}.json")
+    metadata = {
+        "through_season": through_season,
+        "feature_columns": list(FEATURE_COLUMNS),
+        "quantiles": dict(zip(MODEL_LABELS, QUANTILES, strict=True)),
+    }
+    (directory / "metadata.json").write_text(
+        json.dumps(metadata, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def load_receiving_yards_models(
+    through_season: int,
+    directory: Path = MODEL_DIRECTORY,
+) -> dict[str, XGBRegressor] | None:
+    """Load saved models only when their training cutoff and features match."""
+    metadata_path = directory / "metadata.json"
+    if not metadata_path.exists():
+        return None
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if (
+        metadata.get("through_season") != through_season
+        or metadata.get("feature_columns") != list(FEATURE_COLUMNS)
+        or not all((directory / f"{label}.json").exists() for label in MODEL_LABELS)
+    ):
+        return None
+
+    models = {}
+    for label, quantile in zip(MODEL_LABELS, QUANTILES, strict=True):
+        model = _new_quantile_model(quantile)
+        model.load_model(directory / f"{label}.json")
+        models[label] = model
+    return models
+
+
+def predict_receiving_yards(
+    models: Mapping[str, XGBRegressor],
+    features: pd.DataFrame,
+) -> pd.DataFrame:
+    """Return non-negative, ordered p10/p50/p90 estimates for each feature row."""
+    if features.empty:
+        return pd.DataFrame(columns=MODEL_LABELS)
+    estimates = np.column_stack(
+        [
+            np.maximum(
+                models[label].predict(features[list(FEATURE_COLUMNS)]),
+                0,
+            )
+            for label in MODEL_LABELS
+        ]
+    )
+    estimates.sort(axis=1)
+    return pd.DataFrame(estimates, columns=MODEL_LABELS, index=features.index)
+
+
 def backtest_receiving_yards(
     features: pd.DataFrame,
     test_season: int = 2025,
@@ -73,7 +166,7 @@ def backtest_receiving_yards(
     x_test = test[list(feature_columns)]
 
     predictions: dict[str, np.ndarray] = {}
-    for label, quantile in zip(("p10", "p50", "p90"), QUANTILES, strict=True):
+    for label, quantile in zip(MODEL_LABELS, QUANTILES, strict=True):
         model = _new_quantile_model(quantile)
         model.fit(x_train, y_train)
         predictions[label] = np.maximum(model.predict(x_test), 0)

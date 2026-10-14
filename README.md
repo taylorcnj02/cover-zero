@@ -381,11 +381,34 @@ game or later. Then show how to compare test MAE before and after.
 
 **Goal:** a repeatable pipeline that produces predictions for games that haven't happened yet.
 
-**What's different from training:** upcoming games have no results, so features must be built from data available right now (recent form, current injury report, forecast weather, current spread and total).
+**What's different from training:** upcoming games have no results, so features
+must be built only from data available before kickoff. The first version uses
+recent player form and the upcoming opponent's recent results against WR/TE.
+Current injury status, confirmed active rosters, weather forecasts, and
+individual coverage matchups are not available in the imported data and are
+not guessed.
 
-- Build a feature row for each expected player in each upcoming game.
-- Handle uncertainty: a player listed as "questionable" should get a lower expected snap share and a wider range. Skip players ruled out.
-- Save results to a `predictions` table: player, game, stat, 10th/50th/90th percentile, top factors, timestamp.
+- Build a feature row for each WR/TE with an appearance for one of the teams
+  in the target season. Before that season has any results, the previous
+  season's players are used as a roster proxy. Neither case is a verified
+  roster or injury report.
+- Train or load the quantile models using completed seasons before the
+  upcoming season. Model files are cached under the ignored
+  `backend/artifacts/` directory.
+- Save results to a `predictions` table: player, game, receiving-yards stat,
+  10th/50th/90th percentile, model training cutoff, and timestamp. Each run
+  adds a timestamped snapshot.
+
+Run:
+
+```bash
+cd backend
+uv run python -m scripts.build_predictions
+```
+
+The script reports the upcoming week and number of saved player projections.
+The app does not display these model predictions yet; that is the following
+UI/API step.
 
 **Copilot prompt:**
 ```
