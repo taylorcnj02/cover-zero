@@ -1,0 +1,22 @@
+# Python
+.venv/
+backend/.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Environment files and local secrets
+.env
+.env.*
+!.env.example
+
+# Node.js / Next.js
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+out/
+frontend/.env.local
+
+# macOS
+.DS_Store
