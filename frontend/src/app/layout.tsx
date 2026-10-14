@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NFL Parlay App",
-  description: "A local NFL data workspace",
+  title: "NFL Player Outlook",
+  description: "NFL player performance analytics and outlooks",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
