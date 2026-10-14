@@ -3,6 +3,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.routes.games import router as games_router
+
 app = FastAPI(title="NFL Parlay App API")
 
 app.add_middleware(
@@ -12,6 +14,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(games_router)
 
 
 # A route connects an HTTP method and URL path to a Python function.

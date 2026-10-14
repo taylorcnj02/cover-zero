@@ -112,6 +112,16 @@ Expected response:
 {"status":"ok"}
 ```
 
+After importing the schedules, `GET http://localhost:8000/games` returns the
+games in the latest available season and week. You can select a season and/or
+week with query parameters, for example:
+
+```bash
+curl "http://localhost:8000/games?season=2025&week=1"
+```
+
+Interactive API documentation is available at <http://localhost:8000/docs>.
+
 ## Stop the services
 
 Stop the API and frontend with `Ctrl+C` in their Terminal windows. Stop the
