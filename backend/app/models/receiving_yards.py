@@ -8,7 +8,7 @@ from typing import Mapping
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_absolute_error
-from xgboost import XGBRegressor
+from xgboost import DMatrix, XGBRegressor
 
 from app.features.player_game import FEATURE_COLUMNS
 
@@ -24,9 +24,9 @@ class BacktestResult:
     test_season: int
     training_rows: int
     test_rows: int
-    model_median_mae: float
+    model_mae: float
     last_five_baseline_mae: float
-    median_mae_improvement_percent: float
+    mae_improvement_percent: float
     p10_p90_coverage_percent: float
     average_interval_width: float
 
@@ -139,6 +139,47 @@ def predict_receiving_yards(
     return pd.DataFrame(estimates, columns=MODEL_LABELS, index=features.index)
 
 
+def explain_receiving_yards(
+    models: Mapping[str, XGBRegressor],
+    features: pd.DataFrame,
+    limit: int = 3,
+) -> list[list[dict[str, str | float]]]:
+    """Return the strongest local feature contributions from the median model."""
+    if features.empty:
+        return []
+    if limit < 1:
+        raise ValueError("The explanation limit must be at least one.")
+
+    feature_frame = features[list(FEATURE_COLUMNS)]
+    matrix = DMatrix(
+        feature_frame,
+        feature_names=list(FEATURE_COLUMNS),
+    )
+    contributions = models["p50"].get_booster().predict(
+        matrix,
+        pred_contribs=True,
+    )
+    feature_effects = contributions[:, :-1]
+    explanations = []
+    for effects in feature_effects:
+        indices = sorted(
+            range(len(FEATURE_COLUMNS)),
+            key=lambda index: abs(float(effects[index])),
+            reverse=True,
+        )[:limit]
+        explanations.append(
+            [
+                {
+                    "feature": FEATURE_COLUMNS[index],
+                    "effect_yards": round(float(effects[index]), 2),
+                }
+                for index in indices
+                if abs(float(effects[index])) >= 0.01
+            ]
+        )
+    return explanations
+
+
 def backtest_receiving_yards(
     features: pd.DataFrame,
     test_season: int = 2025,
@@ -201,9 +242,9 @@ def backtest_receiving_yards(
         test_season=test_season,
         training_rows=len(training),
         test_rows=len(test),
-        model_median_mae=round(float(model_mae), 4),
+        model_mae=round(float(model_mae), 4),
         last_five_baseline_mae=round(float(baseline_mae), 4),
-        median_mae_improvement_percent=round(float(improvement), 4),
+        mae_improvement_percent=round(float(improvement), 4),
         p10_p90_coverage_percent=round(float(coverage), 4),
         average_interval_width=round(float(interval_width), 4),
     )

@@ -55,6 +55,27 @@ type StatKey = keyof Omit<
 
 type Outlook = { game: Game; players: Player[] };
 
+type ModelPrediction = {
+  player_id: string;
+  player_display_name: string;
+  position: string;
+  team: string;
+  opponent_team: string;
+  stat: string;
+  p10: number;
+  p50: number;
+  p90: number;
+  trained_through_season: number;
+  model_factors: { feature: string; effect_yards: number }[];
+  created_at: string;
+};
+
+type GamePredictions = {
+  game_id: string;
+  last_updated: string | null;
+  players: ModelPrediction[];
+};
+
 const backendUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
 const statLabels: Partial<Record<keyof Player["projection"], string>> = {
@@ -111,9 +132,21 @@ function formatStat(value: number | null, decimals = 1): string {
   return value === null ? "—" : Number(value).toFixed(decimals).replace(/\.0$/, "");
 }
 
+function formatFeatureName(feature: string): string {
+  return feature
+    .replace(/^last_(\d+)_/, "Last $1 games · ")
+    .replace(/^opponent_last5_/, "Opponent last 5 · ")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function GameOutlookContent() {
   const { gameId } = useParams<{ gameId: string }>();
   const [outlook, setOutlook] = useState<Outlook | null>(null);
+  const [modelPredictions, setModelPredictions] =
+    useState<GamePredictions | null>(null);
+  const [modelPredictionError, setModelPredictionError] =
+    useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -148,6 +181,35 @@ function GameOutlookContent() {
     }
 
     void loadOutlook();
+    return () => {
+      isCurrent = false;
+    };
+  }, [gameId]);
+
+  useEffect(() => {
+    let isCurrent = true;
+    fetch(
+      `${backendUrl}/games/${encodeURIComponent(gameId)}/predictions`,
+      { cache: "no-store" },
+    )
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Backend returned HTTP ${response.status}`);
+        }
+        return response.json() as Promise<GamePredictions>;
+      })
+      .then((result) => {
+        if (isCurrent) setModelPredictions(result);
+      })
+      .catch((predictionError: unknown) => {
+        if (isCurrent) {
+          setModelPredictionError(
+            predictionError instanceof Error
+              ? predictionError.message
+              : "Unable to load model predictions",
+          );
+        }
+      });
     return () => {
       isCurrent = false;
     };
@@ -233,12 +295,89 @@ function GameOutlookContent() {
         </header>
 
         <section className="py-6">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 className="text-xl font-semibold text-white">
+                Receiving-yards model outlook
+              </h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Median estimate with a broad 10th–90th percentile range.
+                Select a player for recent results.
+              </p>
+            </div>
+            {modelPredictions?.last_updated && (
+              <p className="text-xs text-slate-500">
+                Updated{" "}
+                {new Date(modelPredictions.last_updated).toLocaleString()}
+              </p>
+            )}
+          </div>
+          {modelPredictionError ? (
+            <p className="mt-4 rounded-lg border border-rose-900 bg-rose-950/40 p-4 text-sm text-rose-200">
+              Could not load saved model ranges: {modelPredictionError}
+            </p>
+          ) : !modelPredictions?.players.length ? (
+            <p className="mt-4 rounded-lg border border-slate-800 bg-slate-900 p-4 text-sm text-slate-400">
+              No saved model ranges for this game. Run the weekly prediction
+              command after refreshing the NFL data.
+            </p>
+          ) : (
+            <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+              {modelPredictions.players.map((prediction) => (
+                <li key={prediction.player_id}>
+                  <Link
+                    href={playerHref(prediction.player_id)}
+                    className="block rounded-lg border border-cyan-900/70 bg-slate-900 p-4 hover:border-cyan-500"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs text-cyan-300">
+                          {prediction.team} · {prediction.position}
+                        </p>
+                        <p className="mt-1 font-semibold text-white">
+                          {prediction.player_display_name}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-cyan-950 px-2 py-1 text-xs text-cyan-200">
+                        Model
+                      </span>
+                    </div>
+                    <p className="mt-4 text-2xl font-semibold text-white">
+                      {formatStat(prediction.p50)}{" "}
+                      <span className="text-sm font-normal text-slate-300">
+                        median yards
+                      </span>
+                    </p>
+                    <p className="mt-1 text-sm text-slate-300">
+                      Range {formatStat(prediction.p10)}–{formatStat(prediction.p90)}{" "}
+                      receiving yards
+                    </p>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Model trained through {prediction.trained_through_season}
+                    </p>
+                    {prediction.model_factors.length > 0 && (
+                      <p className="mt-2 text-xs text-slate-400">
+                        Top model input:{" "}
+                        {formatFeatureName(prediction.model_factors[0].feature)}{" "}
+                        (
+                        {prediction.model_factors[0].effect_yards > 0 ? "+" : ""}
+                        {prediction.model_factors[0].effect_yards} yd)
+                      </p>
+                    )}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="py-6">
           <h2 className="text-xl font-semibold text-white">
-            Top 5 players to watch
+            Players by recent-form baseline
           </h2>
           <p className="mt-1 text-sm text-slate-400">
-            Ranked by projected primary yardage for each player&apos;s position
-            and recent role.
+            These transparent averages are separate from the trained
+            receiving-yards model above.
           </p>
           {rankedPlayers.length === 0 ? (
             <p className="mt-4 rounded-lg border border-slate-800 p-4 text-slate-300">
@@ -268,9 +407,9 @@ function GameOutlookContent() {
         </section>
 
         <aside className="rounded-lg border border-amber-900/70 bg-amber-950/30 p-4 text-sm text-amber-100">
-          These are simple baseline estimates calculated from recent player
-          averages—not a trained or backtested prediction model. Current injury
-          status and confirmed lineups are not included.
+          Baseline estimates use recent player averages and are not trained or
+          backtested. Model intervals are available only for WR/TE receiving
+          yards. Current injury status and confirmed lineups are not included.
         </aside>
 
         <section className="py-6">

@@ -1,6 +1,7 @@
 """Build and save next-week WR/TE receiving-yards predictions."""
 
 import argparse
+import json
 from datetime import date
 
 import pandas as pd
@@ -16,6 +17,7 @@ from app.features.player_game import (
 from app.models.receiving_yards import (
     load_receiving_yards_models,
     predict_receiving_yards,
+    explain_receiving_yards,
     save_receiving_yards_models,
     train_receiving_yards_models,
 )
@@ -36,19 +38,26 @@ CREATE_PREDICTIONS_TABLE = text(
         p50 DOUBLE PRECISION NOT NULL,
         p90 DOUBLE PRECISION NOT NULL,
         trained_through_season INTEGER NOT NULL,
+        model_factors JSONB NOT NULL DEFAULT '[]'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
+    """
+)
+ADD_MODEL_FACTORS_COLUMN = text(
+    """
+    ALTER TABLE predictions
+    ADD COLUMN IF NOT EXISTS model_factors JSONB NOT NULL DEFAULT '[]'::jsonb
     """
 )
 INSERT_PREDICTION = text(
     """
     INSERT INTO predictions (
         game_id, player_id, player_display_name, position, team, opponent_team,
-        stat, p10, p50, p90, trained_through_season
+        stat, p10, p50, p90, trained_through_season, model_factors
     ) VALUES (
         :game_id, :player_id, :player_display_name, :position, :team,
         :opponent_team, 'receiving_yards', :p10, :p50, :p90,
-        :trained_through_season
+        :trained_through_season, CAST(:model_factors AS JSONB)
     )
     """
 )
@@ -92,6 +101,7 @@ def save_predictions(
             "p50": float(row.p50),
             "p90": float(row.p90),
             "trained_through_season": trained_through_season,
+            "model_factors": json.dumps(row.model_factors),
         }
         for row in predictions.itertuples(index=False)
     ]
@@ -102,6 +112,7 @@ def save_predictions(
 
     with engine.begin() as connection:
         connection.execute(CREATE_PREDICTIONS_TABLE)
+        connection.execute(ADD_MODEL_FACTORS_COLUMN)
         connection.execute(INSERT_PREDICTION, rows)
 
 
@@ -160,6 +171,7 @@ def main() -> None:
         save_receiving_yards_models(models, trained_through_season)
 
     quantiles = predict_receiving_yards(models, features)
+    explanations = explain_receiving_yards(models, features)
     output = features[
         [
             "game_id",
@@ -171,6 +183,7 @@ def main() -> None:
         ]
     ].reset_index(drop=True)
     output[["p10", "p50", "p90"]] = quantiles.reset_index(drop=True)
+    output["model_factors"] = explanations
     save_predictions(output, trained_through_season)
 
     print(

@@ -15,6 +15,16 @@ type Game = {
   stadium: string | null;
 };
 
+type PredictionStatus = {
+  available: boolean;
+  last_updated: string | null;
+  player_count: number;
+  game_count?: number;
+  trained_through_season?: number | null;
+  season?: number | null;
+  week?: number | null;
+};
+
 const backendUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
 function formatDate(value: string | null): string {
@@ -37,8 +47,21 @@ function formatTime(value: string | null): string {
   });
 }
 
+function formatUpdatedAt(value: string): string {
+  return new Date(value).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export default function Home() {
   const [games, setGames] = useState<Game[]>([]);
+  const [predictionStatus, setPredictionStatus] =
+    useState<PredictionStatus | null>(null);
+  const [predictionStatusError, setPredictionStatusError] =
+    useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,6 +97,32 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    let isCurrent = true;
+    fetch(`${backendUrl}/predictions/status`, { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Backend returned HTTP ${response.status}`);
+        }
+        return response.json() as Promise<PredictionStatus>;
+      })
+      .then((status) => {
+        if (isCurrent) setPredictionStatus(status);
+      })
+      .catch((statusError: unknown) => {
+        if (isCurrent) {
+          setPredictionStatusError(
+            statusError instanceof Error
+              ? statusError.message
+              : "Unable to check model forecast status",
+          );
+        }
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
+
   const firstGame = games[0];
 
   return (
@@ -84,6 +133,17 @@ export default function Home() {
             NFL Player Outlook
           </p>
           <h1 className="mt-2 text-3xl font-bold text-white">Upcoming games</h1>
+          <nav className="mt-4 flex flex-wrap gap-4 text-sm">
+            <Link className="text-cyan-300 hover:underline" href="/">
+              Schedule
+            </Link>
+            <Link
+              className="text-cyan-300 hover:underline"
+              href="/accuracy"
+            >
+              Model accuracy
+            </Link>
+          </nav>
           {firstGame && (
             <p className="mt-2 text-sm text-slate-400">
               {firstGame.season} · Week {firstGame.week}
@@ -93,6 +153,24 @@ export default function Home() {
             </p>
           )}
         </header>
+
+        <aside className="mt-5 rounded-lg border border-slate-800 bg-slate-900/70 p-4 text-sm">
+          <p className="font-medium text-white">Forecast freshness</p>
+          {predictionStatus?.available && predictionStatus.last_updated ? (
+            <p className="mt-1 text-slate-300">
+              Updated {formatUpdatedAt(predictionStatus.last_updated)} ·{" "}
+              {predictionStatus.player_count} player ranges for{" "}
+              {predictionStatus.game_count} games · model trained through{" "}
+              {predictionStatus.trained_through_season}
+            </p>
+          ) : (
+            <p className="mt-1 text-slate-400">
+              {predictionStatusError
+                ? `Could not check forecast freshness: ${predictionStatusError}`
+                : "No saved model forecast yet. Refresh NFL data and run the prediction command described in the README."}
+            </p>
+          )}
+        </aside>
 
         <section className="py-6" aria-live="polite">
           <h2 className="mb-4 text-lg font-semibold text-white">

@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routes.games import router as games_router
+from app.routes.predictions import router as predictions_router
 
 app = FastAPI(title="NFL Player Outlook API")
 
@@ -16,6 +17,7 @@ app.add_middleware(
 )
 
 app.include_router(games_router)
+app.include_router(predictions_router)
 
 
 # A route connects an HTTP method and URL path to a Python function.

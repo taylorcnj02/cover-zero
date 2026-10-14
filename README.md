@@ -329,7 +329,7 @@ uv run python -m scripts.backtest_receiving_yards
 ```
 
 On the currently loaded nflverse snapshot, training on 2023-2024 and testing
-only on 2025 produced a median MAE of **17.71 receiving yards**, compared with
+only on 2025 produced an MAE of **17.71 receiving yards**, compared with
 **18.89 yards** for the last-five-game average (a **6.25% lower MAE**). The
 10th-to-90th percentile range contained **85.76%** of test results, with an
 average width of **59.63 yards**. A feature comparison found rolling receiving
@@ -442,7 +442,20 @@ transparent heuristics, not trained or backtested predictions; the data does
 not identify individual cornerback matchups or current injury/lineup changes.
 Replace the baseline with validated model output after Step 10.
 
-Endpoints: `GET /games/{id}/predictions`, `GET /players/{id}/outlook`
+Endpoints:
+`GET /games/{game_id}/predictions`,
+`GET /games/{game_id}/players/{player_id}/outlook`,
+`GET /predictions/status`, and `GET /accuracy/receiving-yards`.
+
+The game and player pages show the saved receiving-yards model range separately
+from the existing recent-form baselines. The model range is available only for
+WR/TE receiving yards; other displayed stat estimates are still heuristics.
+The player page also shows the median XGBoost model's three strongest native
+feature contributions. These additive attributions describe model behavior,
+not causes or confirmed matchup news.
+The accuracy page calculates the held-out 2025 benchmark and separately scores
+saved forecasts once their games finish. The first backtest calculation after
+opening that page trains the backtest models and may take a short while.
 
 **Copilot prompt:**
 ```
@@ -459,21 +472,39 @@ that lists players grouped by team with a simple range display. Explain briefly.
 
 ## Step 14: Keep data fresh
 
-- Schedule refreshes (injury reports update Wednesday through Friday; inactives post about 90 minutes before kickoff).
-- Re-run predictions when key information changes (injury designations, weather forecast, inactives).
-- Use a simple scheduler (APScheduler or cron) first. Don't over-engineer.
-- Show a "last updated" time in the UI.
+- Refresh nflverse and rebuild the next-week forecast together with:
+
+  ```bash
+  cd backend
+  uv run python -m scripts.refresh_outlook
+  ```
+
+- The home page shows when the saved forecast was last updated. The command
+  refreshes nflverse schedules and weekly player stats before appending a new
+  forecast snapshot.
+- This data source does not provide current injury designations, confirmed
+  inactives, weather forecasts, or an official depth chart. The refresh job
+  does not claim to update those sources.
+- To automate refreshes, schedule the command with macOS `launchd` or cron at a
+  cadence that suits your data source. It is intentionally not installed as a
+  background job automatically.
 
 ---
 
 ## Step 15: Track accuracy, polish, and deploy
 
-- [ ] **Accuracy page:** after games finish, compare predictions to actual results and show error and range coverage over time. Honest tracking builds trust (include misses).
-- [ ] Calibrate: if the 10-90 range captures only 60% of results, widen it
-- [ ] Disclaimers: projections are estimates, not guarantees, and not betting advice
-- [ ] Polish the UI (layout, colors, charts, mobile view)
-- [ ] Move to Postgres if you need it
-- [ ] Deploy (frontend on Vercel, backend on a small host such as Render or Fly.io)
+- [x] **Accuracy page:** compare pre-kickoff saved forecasts with completed
+  results and show MAE and range coverage by week. The page also shows the
+  2025 held-out benchmark separately from live forecast tracking.
+- [x] Disclaimers: projections are estimates, not guarantees, and not betting
+  advice.
+- [x] Use PostgreSQL for persistent schedules, player stats, and predictions.
+- [ ] Calibrate prediction ranges after collecting enough live outcomes. The
+  current 2025 held-out P10–P90 coverage is 85.76%, above its nominal 80%;
+  don't narrow it based on this one test alone.
+- [ ] Further polish, deploy publicly, and configure production secrets and
+  hosting. This setup is intended for local development; public deployment has
+  not been configured.
 
 > If you ever add betting lines, odds, or sportsbook links, check state rules and add 21+ and responsible-gambling messaging at that point.
 
