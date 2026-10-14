@@ -49,6 +49,7 @@ def _new_quantile_model(quantile: float) -> XGBRegressor:
 def backtest_receiving_yards(
     features: pd.DataFrame,
     test_season: int = 2025,
+    feature_columns: tuple[str, ...] = FEATURE_COLUMNS,
 ) -> tuple[BacktestResult, pd.DataFrame]:
     """Train on earlier seasons and score a completely held-out season."""
     training = features.loc[
@@ -67,9 +68,9 @@ def backtest_receiving_yards(
             f"No {test_season} test rows have both a result and prior-game baseline."
         )
 
-    x_train = training[list(FEATURE_COLUMNS)]
+    x_train = training[list(feature_columns)]
     y_train = training["receiving_yards"].astype(float)
-    x_test = test[list(FEATURE_COLUMNS)]
+    x_test = test[list(feature_columns)]
 
     predictions: dict[str, np.ndarray] = {}
     for label, quantile in zip(("p10", "p50", "p90"), QUANTILES, strict=True):
@@ -107,10 +108,10 @@ def backtest_receiving_yards(
         test_season=test_season,
         training_rows=len(training),
         test_rows=len(test),
-        model_median_mae=round(float(model_mae), 2),
-        last_five_baseline_mae=round(float(baseline_mae), 2),
-        median_mae_improvement_percent=round(float(improvement), 2),
-        p10_p90_coverage_percent=round(float(coverage), 2),
-        average_interval_width=round(float(interval_width), 2),
+        model_median_mae=round(float(model_mae), 4),
+        last_five_baseline_mae=round(float(baseline_mae), 4),
+        median_mae_improvement_percent=round(float(improvement), 4),
+        p10_p90_coverage_percent=round(float(coverage), 4),
+        average_interval_width=round(float(interval_width), 4),
     )
     return result, result_frame
